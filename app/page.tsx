@@ -1,103 +1,275 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
+import {
+  Business,
+  SearchFilters as SearchFiltersType,
+  RankingData,
+} from "@/types";
+import BusinessSearch from "./components/BusinessSearch";
+import CompetitorsList from "./components/CompetitorsList";
+import SearchFiltersComponent from "./components/SearchFilters";
+import ExportOptions from "./components/ExportOptions";
+
+// Dynamically import map component to avoid SSR issues
+const RankingMap = dynamic(() => import("./components/RankingMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-96 bg-gray-200 animate-pulse rounded-lg" />
+  ),
+});
+
+const HomePage: React.FC = () => {
+  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(
+    null
+  );
+  const [location, setLocation] = useState<string>("");
+  const [keywords, setKeywords] = useState<string>("");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [rankingData, setRankingData] = useState<RankingData | null>(null);
+  const [filters, setFilters] = useState<SearchFiltersType>({
+    radius: 25,
+    minRating: 0,
+    maxResults: 20,
+    includeReviews: true,
+    sortBy: "relevance",
+  });
+
+  // Move this import to the top of the file
+  // import { useMemo } from "react";
+
+  const mockRankingData: RankingData = useMemo(
+    () => ({
+      center: { lat: 34.0522, lng: -118.2437 },
+      timestamp: new Date().toISOString(),
+      businesses: [
+        {
+          id: 1,
+          name: "Eternity Private Security",
+          rank: 1,
+          lat: 34.0522,
+          lng: -118.2437,
+          visibility: 67,
+          difficulty: "LOW",
+          isTarget: true,
+          rating: 4.8,
+          reviews: 127,
+          address: "123 Main St, Los Angeles, CA",
+          placeId: "mock_place_1",
+        },
+        {
+          id: 2,
+          name: "Guardian Shield",
+          rank: 2,
+          lat: 34.0622,
+          lng: -118.2537,
+          visibility: 55,
+          difficulty: "MEDIUM",
+          isTarget: false,
+          rating: 4.7,
+          reviews: 98,
+          address: "456 Elm St, Los Angeles, CA",
+          placeId: "mock_place_2",
+        },
+        {
+          id: 3,
+          name: "SecureCorp",
+          rank: 3,
+          lat: 34.0722,
+          lng: -118.2637,
+          visibility: 48,
+          difficulty: "MEDIUM",
+          isTarget: false,
+          rating: 4.6,
+          reviews: 75,
+          address: "789 Oak St, Los Angeles, CA",
+          placeId: "mock_place_3",
+        },
+        {
+          id: 4,
+          name: "Shield & Protect",
+          rank: 4,
+          lat: 34.0422,
+          lng: -118.2337,
+          visibility: 72,
+          difficulty: "LOW",
+          isTarget: false,
+          rating: 4.9,
+          reviews: 110,
+          address: "321 Pine St, Los Angeles, CA",
+          placeId: "mock_place_4",
+        },
+        {
+          id: 5,
+          name: "Defense Alliance",
+          rank: 5,
+          lat: 34.0222,
+          lng: -118.2137,
+          visibility: 60,
+          difficulty: "HIGH",
+          isTarget: false,
+          rating: 4.3,
+          reviews: 85,
+          address: "654 Maple St, Los Angeles, CA",
+          placeId: "mock_place_5",
+        },
+        {
+          id: 6,
+          name: "Valley Protection Services",
+          rank: 10,
+          lat: 34.0822,
+          lng: -118.2737,
+          visibility: 18,
+          difficulty: "HIGH",
+          isTarget: false,
+          rating: 4.1,
+          reviews: 92,
+          address: "987 Cedar Blvd, Los Angeles, CA",
+          placeId: "mock_place_6",
+        },
+      ],
+    }),
+    []
+  );
+
+  const analyzeRankings = useCallback(async (): Promise<void> => {
+    if (!selectedBusiness || !location || !keywords) {
+      alert("Please fill in all required fields");
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      let filteredBusinesses = mockRankingData.businesses.filter(
+        (business: Business) => {
+          if (
+            filters.minRating > 0 &&
+            (business.rating || 0) < filters.minRating
+          )
+            return false;
+          return true;
+        }
+      );
+      if (filters.maxResults < filteredBusinesses.length) {
+        filteredBusinesses = filteredBusinesses.slice(0, filters.maxResults);
+      }
+      setRankingData({
+        ...mockRankingData,
+        businesses: filteredBusinesses,
+      });
+    } catch (error) {
+      console.error("Error analyzing rankings:", error);
+      alert("Failed to analyze rankings. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedBusiness, location, keywords, filters, mockRankingData]);
+
+  const targetBusiness = rankingData?.businesses.find((b) => b.isTarget);
+  const competitors = rankingData?.businesses.filter((b) => !b.isTarget) || [];
+
+  const handleExport = useCallback((format: string): void => {
+    console.log(`Exported as ${format}`);
+  }, []);
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+    <div className="min-h-screen bg-gray-50">
+      <div className="container mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Left Sidebar - Search and Controls */}
+          <div className="lg:col-span-1 space-y-6">
+            {/* Business Search */}
+            <BusinessSearch
+              selectedBusiness={selectedBusiness}
+              onBusinessSelect={setSelectedBusiness}
+              location={location}
+              onLocationChange={setLocation}
+              keywords={keywords}
+              onKeywordsChange={setKeywords}
+              onAnalyze={analyzeRankings}
+              isLoading={isLoading}
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+            {/* Target Business Details */}
+            {targetBusiness && (
+              <div className="bg-white text-zinc-900 rounded-lg shadow-sm p-6">
+                <h2 className="text-lg font-semibold mb-4">
+                  Target Business Details
+                </h2>
+                <p>
+                  <strong>Name:</strong> {targetBusiness.name}
+                </p>
+                <p>
+                  <strong>Rank:</strong> {targetBusiness.rank}
+                </p>
+                <p>
+                  <strong>Visibility:</strong> {targetBusiness.visibility}%
+                </p>
+                <p>
+                  <strong>Difficulty:</strong> {targetBusiness.difficulty}
+                </p>
+                <p>
+                  <strong>Rating:</strong> {targetBusiness.rating} (
+                  {targetBusiness.reviews} reviews)
+                </p>
+                <p>
+                  <strong>Address:</strong> {targetBusiness.address}
+                </p>
+              </div>
+            )}
+            {/* Search Filters */}
+            <SearchFiltersComponent
+              filters={filters}
+              onFiltersChange={setFilters}
+            />
+            {/* Export Options */}
+            {rankingData && (
+              <ExportOptions data={rankingData} onExport={handleExport} />
+            )}
+          </div>
+          {/* Main Content - Map and Results */}
+          <div className="lg:col-span-3 space-y-6">
+            {rankingData && (
+              <>
+                {/* Position Map */}
+                <div className="bg-white rounded-lg shadow-sm p-6">
+                  <h2 className="text-lg font-semibold text-zinc-900 mb-4">
+                    Position Map
+                  </h2>
+                  <RankingMap data={rankingData} />
+                </div>
+                {/* Competitors Analysis */}
+                <CompetitorsList
+                  competitors={competitors}
+                  targetBusiness={targetBusiness}
+                />
+              </>
+            )}
+            {/* Empty State */}
+            {!rankingData && !isLoading && (
+              <div className="bg-white rounded-lg shadow-sm p-12 text-center">
+                <h2 className="text-xl font-semibold text-zinc-900 mb-4">
+                  No Data Available
+                </h2>
+                <p className="text-gray-500">
+                  Please perform a search to see the results.
+                </p>
+              </div>
+            )}
+            {/* Loading State */}
+            {isLoading && (
+              <div className="bg-white rounded-lg shadow-sm p-12 text-center">
+                <h2 className="text-xl font-semibold mb-4">Loading...</h2>
+                <p className="text-gray-500">
+                  Your results are being prepared.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
     </div>
   );
-}
+};
+
+export default HomePage;
