@@ -12,11 +12,7 @@ import CompetitorsList from "./components/CompetitorsList";
 import SearchFiltersComponent from "./components/SearchFilters";
 import ExportOptions from "./components/ExportOptions";
 import { ErrorBoundary, DataErrorFallback } from "./components/ErrorBoundary";
-import {
-  DataLoadingSkeleton,
-  BusinessSearchSkeleton,
-  SearchFiltersSkeleton,
-} from "./components/LoadingSkeletons";
+import { DataLoadingSkeleton } from "./components/LoadingSkeletons";
 
 // Dynamically import map component to avoid SSR issues
 const RankingMap = dynamic(() => import("./components/RankingMap"), {
@@ -54,6 +50,8 @@ class ApiClient {
     filters?: SearchFiltersType
   ): Promise<RankingData> {
     try {
+      console.log("Making API request with filters:", filters);
+
       const response = await fetch("/api/analyze-rankings", {
         method: "POST",
         headers: {
@@ -118,8 +116,11 @@ const HomePage: React.FC = () => {
         filters
       );
 
+      console.log(
+        "Analysis completed successfully. Setting ranking data:",
+        data
+      );
       setRankingData(data);
-      console.log("Analysis completed successfully", data);
 
       // Show success message
       const targetBusiness = data.businesses.find((b) => b.isTarget);
@@ -149,12 +150,26 @@ const HomePage: React.FC = () => {
     }
   }, [selectedBusiness, location, keywords, filters, apiClient]);
 
+  // Auto re-analyze when filters change (if we already have data)
+  const handleFiltersChange = useCallback((newFilters: SearchFiltersType) => {
+    console.log("Filters changed:", newFilters);
+    setFilters(newFilters);
+  }, []);
+
+  // Manual re-analysis triggered by filters
+  const handleApplyFilters = useCallback(() => {
+    if (selectedBusiness && location && keywords && !isLoading) {
+      console.log("Re-analyzing with new filters...");
+      analyzeRankings();
+    }
+  }, [selectedBusiness, location, keywords, isLoading, analyzeRankings]);
+
   const targetBusiness = rankingData?.businesses.find((b) => b.isTarget);
   const competitors = rankingData?.businesses.filter((b) => !b.isTarget) || [];
 
   const handleExport = useCallback((format: string): void => {
     console.log(`Exported as ${format}`);
-    // Export functionality would be implemented here
+    // Export functionality is implemented in the ExportOptions component
   }, []);
 
   const handleRetryAnalysis = useCallback(() => {
@@ -203,7 +218,9 @@ const HomePage: React.FC = () => {
                       <div className="flex justify-between">
                         <span className="text-gray-600">Business:</span>
                         <span className="font-medium">
-                          {targetBusiness.name}
+                          {targetBusiness.name.length > 20
+                            ? targetBusiness.name.slice(0, 20) + "..."
+                            : targetBusiness.name}
                         </span>
                       </div>
                       <div className="flex justify-between">
@@ -297,7 +314,8 @@ const HomePage: React.FC = () => {
               >
                 <SearchFiltersComponent
                   filters={filters}
-                  onFiltersChange={setFilters}
+                  onFiltersChange={handleFiltersChange}
+                  onApplyFilters={handleApplyFilters}
                 />
               </ErrorBoundary>
 
@@ -376,7 +394,43 @@ const HomePage: React.FC = () => {
                         ({rankingData.businesses.length} businesses found)
                       </span>
                     </h2>
-                    <RankingMap data={rankingData} />
+                    <ErrorBoundary
+                      fallback={({ error, retry }) => (
+                        <div className="w-full h-96 bg-yellow-50 rounded-lg border border-yellow-200 flex items-center justify-center">
+                          <div className="text-center p-6">
+                            <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                              <svg
+                                className="w-6 h-6 text-yellow-600"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                              </svg>
+                            </div>
+                            <h3 className="text-sm font-medium text-yellow-900 mb-2">
+                              Map Error
+                            </h3>
+                            <p className="text-xs text-yellow-700 mb-3">
+                              Failed to load map component
+                            </p>
+                            <button
+                              onClick={retry}
+                              className="px-3 py-1 text-xs bg-yellow-600 text-white rounded hover:bg-yellow-700 transition-colors"
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    >
+                      <RankingMap data={rankingData} />
+                    </ErrorBoundary>
                   </div>
 
                   {/* Competitors Analysis */}
@@ -406,6 +460,10 @@ const HomePage: React.FC = () => {
                           <p>• Searching Google Places for "{keywords}"</p>
                           <p>• Analyzing competitor positions</p>
                           <p>• Calculating visibility metrics</p>
+                          <p>
+                            • Applying filters (radius: {filters.radius}km, min
+                            rating: {filters.minRating}+)
+                          </p>
                         </div>
                       </div>
                     </div>

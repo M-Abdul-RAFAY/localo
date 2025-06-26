@@ -6,11 +6,13 @@ import { SearchFilters as SearchFiltersType } from "@/types";
 interface SearchFiltersProps {
   filters: SearchFiltersType;
   onFiltersChange: (filters: SearchFiltersType) => void;
+  onApplyFilters?: () => void; // Trigger re-analysis when filters change
 }
 
 const SearchFilters: React.FC<SearchFiltersProps> = ({
   filters,
   onFiltersChange,
+  onApplyFilters,
 }) => {
   const [resetConfirm, setResetConfirm] = useState<boolean>(false);
 
@@ -20,6 +22,14 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
   ): void => {
     const newFilters = { ...filters, [key]: value };
     onFiltersChange(newFilters);
+
+    // Automatically trigger re-analysis if callback provided
+    if (onApplyFilters) {
+      // Debounce the re-analysis to avoid too many API calls
+      setTimeout(() => {
+        onApplyFilters();
+      }, 500);
+    }
   };
 
   const resetFilters = (): void => {
@@ -32,6 +42,12 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
     };
     onFiltersChange(defaultFilters);
     setResetConfirm(false);
+
+    if (onApplyFilters) {
+      setTimeout(() => {
+        onApplyFilters();
+      }, 500);
+    }
   };
 
   const getRadiusLabel = (radius: number): string => {
@@ -73,7 +89,12 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
             step="5"
             value={filters.radius}
             onChange={(e) => updateFilter("radius", parseInt(e.target.value))}
-            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+            style={{
+              background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${
+                ((filters.radius - 5) / 95) * 100
+              }%, #e5e7eb ${((filters.radius - 5) / 95) * 100}%, #e5e7eb 100%)`,
+            }}
           />
           <div className="flex justify-between text-xs text-gray-500 mt-1">
             <span>5 km</span>
@@ -93,7 +114,7 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
             onChange={(e) =>
               updateFilter("minRating", parseFloat(e.target.value))
             }
-            className="w-full px-3 py-2 text-zinc-400 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 text-zinc-600 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value={0}>Any Rating</option>
             <option value={3.0}>3.0+ Stars</option>
@@ -125,6 +146,9 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
               </button>
             ))}
           </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Higher numbers may take longer to load
+          </p>
         </div>
 
         {/* Sort By */}
@@ -140,9 +164,9 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
                 e.target.value as SearchFiltersType["sortBy"]
               )
             }
-            className="w-full text-zinc-400 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full text-zinc-600 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="relevance">Relevance</option>
+            <option value="relevance">Relevance (Default)</option>
             <option value="distance">Distance (Nearest First)</option>
             <option value="rating">Rating (Highest First)</option>
             <option value="reviews">Reviews (Most First)</option>
@@ -157,7 +181,7 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
                 Include Review Data
               </label>
               <p className="text-xs text-gray-500">
-                Fetch ratings and review counts
+                Fetch ratings and review counts (slower but more accurate)
               </p>
             </div>
             <button
@@ -197,7 +221,7 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
               className="p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               type="button"
             >
-              <div className="font-medium text-zinc-500 text-sm">
+              <div className="font-medium text-zinc-600 text-sm">
                 High Quality Nearby
               </div>
               <div className="text-xs text-gray-500">
@@ -218,7 +242,7 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
               className="p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               type="button"
             >
-              <div className="font-medium text-zinc-500 text-sm">
+              <div className="font-medium text-zinc-600 text-sm">
                 Comprehensive Analysis
               </div>
               <div className="text-xs text-gray-500">
@@ -239,7 +263,7 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
               className="p-3 text-left border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               type="button"
             >
-              <div className="font-medium text-zinc-500 text-sm">
+              <div className="font-medium text-zinc-600 text-sm">
                 Local Competitors
               </div>
               <div className="text-xs text-gray-500">
@@ -249,9 +273,28 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
           </div>
         </div>
 
+        {/* Apply Filters Button */}
+        {hasCustomFilters() && onApplyFilters && (
+          <div className="pt-4 border-t border-gray-200">
+            <button
+              onClick={onApplyFilters}
+              className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+              type="button"
+            >
+              Apply Filters & Re-analyze
+            </button>
+          </div>
+        )}
+
         {/* Reset Button */}
         {hasCustomFilters() && (
-          <div className="pt-4 border-t border-gray-200">
+          <div
+            className={`${
+              hasCustomFilters() && onApplyFilters
+                ? ""
+                : "pt-4 border-t border-gray-200"
+            }`}
+          >
             {resetConfirm ? (
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">

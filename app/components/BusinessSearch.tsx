@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Business } from "@/types";
 import { useDebounce } from "../hooks/useDebounce";
 import { useGeolocation } from "../hooks/useGeolocation";
@@ -24,6 +24,15 @@ interface BusinessSearchProps {
   isLoading: boolean;
 }
 
+interface LocationSuggestion {
+  description: string;
+  place_id: string;
+  structured_formatting: {
+    main_text: string;
+    secondary_text: string;
+  };
+}
+
 const BusinessSearch: React.FC<BusinessSearchProps> = ({
   selectedBusiness,
   onBusinessSelect,
@@ -40,6 +49,22 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
   const [searchError, setSearchError] = useState<string>("");
   const [hasSearched, setHasSearched] = useState<boolean>(false);
 
+  // Location suggestions state
+  const [showLocationSuggestions, setShowLocationSuggestions] =
+    useState<boolean>(false);
+  const [locationSuggestions, setLocationSuggestions] = useState<
+    LocationSuggestion[]
+  >([]);
+  const [isLoadingLocationSuggestions, setIsLoadingLocationSuggestions] =
+    useState<boolean>(false);
+
+  // Refs for Google services
+  const autocompleteServiceRef =
+    useRef<google.maps.places.AutocompleteService | null>(null);
+  const placesServiceRef = useRef<google.maps.places.PlacesService | null>(
+    null
+  );
+
   const {
     getCurrentLocation,
     loading: locationLoading,
@@ -53,6 +78,7 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
   } = useGoogleMaps();
 
   const debouncedBusinessName = useDebounce(businessName, 500);
+  const debouncedLocation = useDebounce(location, 300);
 
   // Initialize Google Places service
   const placesService = useMemo(() => {
@@ -63,6 +89,91 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
     }
     return null;
   }, [mapsLoaded]);
+
+  // Initialize Google services when maps are loaded
+  useEffect(() => {
+    if (mapsLoaded && window.google) {
+      // Initialize AutocompleteService for location suggestions
+      autocompleteServiceRef.current =
+        new window.google.maps.places.AutocompleteService();
+
+      // Initialize PlacesService for place details
+      const mapDiv = document.createElement("div");
+      placesServiceRef.current = new window.google.maps.places.PlacesService(
+        mapDiv
+      );
+
+      console.log("Google Places Autocomplete service initialized");
+    }
+  }, [mapsLoaded]);
+
+  // Get location suggestions from Google Places Autocomplete
+  const getLocationSuggestions = async (input: string): Promise<void> => {
+    if (!input.trim() || input.length < 2 || !autocompleteServiceRef.current) {
+      setLocationSuggestions([]);
+      setShowLocationSuggestions(false);
+      return;
+    }
+
+    setIsLoadingLocationSuggestions(true);
+
+    try {
+      const request: google.maps.places.AutocompletionRequest = {
+        input: input,
+      };
+
+      autocompleteServiceRef.current.getPlacePredictions(
+        request,
+        (predictions, status) => {
+          console.log("Autocomplete status:", status);
+          console.log("Predictions:", predictions);
+
+          if (
+            status === google.maps.places.PlacesServiceStatus.OK &&
+            predictions
+          ) {
+            const suggestions: LocationSuggestion[] = predictions.map(
+              (prediction) => ({
+                description: prediction.description,
+                place_id: prediction.place_id || "",
+                structured_formatting: {
+                  main_text:
+                    prediction.structured_formatting?.main_text ||
+                    prediction.description,
+                  secondary_text:
+                    prediction.structured_formatting?.secondary_text || "",
+                },
+              })
+            );
+
+            setLocationSuggestions(suggestions.slice(0, 5)); // Limit to 5 suggestions
+            setShowLocationSuggestions(suggestions.length > 0);
+          } else {
+            console.warn("No location predictions found:", status);
+            setLocationSuggestions([]);
+            setShowLocationSuggestions(false);
+          }
+
+          setIsLoadingLocationSuggestions(false);
+        }
+      );
+    } catch (error) {
+      console.error("Error getting location suggestions:", error);
+      setLocationSuggestions([]);
+      setShowLocationSuggestions(false);
+      setIsLoadingLocationSuggestions(false);
+    }
+  };
+
+  // Update location suggestions based on input
+  useEffect(() => {
+    if (debouncedLocation.length > 1 && mapsLoaded) {
+      getLocationSuggestions(debouncedLocation);
+    } else {
+      setLocationSuggestions([]);
+      setShowLocationSuggestions(false);
+    }
+  }, [debouncedLocation, mapsLoaded]);
 
   // Real business search using Google Places API
   const searchBusinesses = async (query: string): Promise<void> => {
@@ -124,7 +235,10 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
 
   const handleUseCurrentLocation = async (): Promise<void> => {
     try {
+      console.log("Getting current location...");
       const position = await getCurrentLocation();
+      console.log("Got position:", position);
+
       if (position) {
         // Use reverse geocoding to get address
         if (placesService && window.google) {
@@ -135,27 +249,40 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
           );
 
           geocoder.geocode({ location: latlng }, (results, status) => {
+            console.log("Reverse geocoding status:", status);
+            console.log("Reverse geocoding results:", results);
+
             if (status === "OK" && results?.[0]) {
               // Get the formatted address
               const address = results[0].formatted_address;
+              console.log("Setting location to:", address);
               onLocationChange(address);
+              setShowLocationSuggestions(false);
             } else {
               // Fallback to coordinates
-              onLocationChange(
-                `${position.lat.toFixed(4)}, ${position.lng.toFixed(4)}`
-              );
+              const coordsString = `${position.lat.toFixed(
+                4
+              )}, ${position.lng.toFixed(4)}`;
+              console.log("Fallback to coordinates:", coordsString);
+              onLocationChange(coordsString);
+              setShowLocationSuggestions(false);
             }
           });
         } else {
           // Fallback to coordinates if geocoder not available
-          onLocationChange(
-            `${position.lat.toFixed(4)}, ${position.lng.toFixed(4)}`
-          );
+          const coordsString = `${position.lat.toFixed(
+            4
+          )}, ${position.lng.toFixed(4)}`;
+          console.log("Direct coordinates fallback:", coordsString);
+          onLocationChange(coordsString);
+          setShowLocationSuggestions(false);
         }
       }
     } catch (error) {
       console.error("Geolocation error:", error);
-      alert("Could not get your location. Please enter manually.");
+      alert(
+        "Could not get your location. Please enter manually or check location permissions."
+      );
     }
   };
 
@@ -171,6 +298,64 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
     setBusinessName("");
     setBusinesses([]);
     setHasSearched(false);
+  };
+
+  const handleLocationSuggestionClick = async (
+    suggestion: LocationSuggestion
+  ): Promise<void> => {
+    console.log("Selected location suggestion:", suggestion);
+
+    // Immediately update the location field and hide suggestions
+    onLocationChange(suggestion.description);
+    setShowLocationSuggestions(false);
+    setLocationSuggestions([]); // Clear suggestions array
+    setIsLoadingLocationSuggestions(false); // Ensure loading state is cleared
+
+    // Optionally, get more detailed place information in the background
+    if (suggestion.place_id && placesServiceRef.current) {
+      try {
+        const request: google.maps.places.PlaceDetailsRequest = {
+          placeId: suggestion.place_id,
+          fields: ["formatted_address", "geometry", "name"],
+        };
+
+        placesServiceRef.current.getDetails(request, (place, status) => {
+          if (status === google.maps.places.PlacesServiceStatus.OK && place) {
+            console.log("Place details:", place);
+            // Use the more detailed address if available
+            if (
+              place.formatted_address &&
+              place.formatted_address !== suggestion.description
+            ) {
+              onLocationChange(place.formatted_address);
+            }
+          }
+        });
+      } catch (error) {
+        console.error("Error getting place details:", error);
+        // Keep the original description if place details fail
+      }
+    }
+  };
+
+  const handleLocationInputFocus = (): void => {
+    if (location.length > 1 && locationSuggestions.length > 0) {
+      setShowLocationSuggestions(true);
+    }
+  };
+
+  const handleLocationInputBlur = (): void => {
+    // Use a longer delay to ensure click events on suggestions are processed
+    setTimeout(() => {
+      setShowLocationSuggestions(false);
+    }, 300);
+  };
+
+  const handleLocationInputKeyDown = (e: React.KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      setShowLocationSuggestions(false);
+      setLocationSuggestions([]);
+    }
   };
 
   const canAnalyze = selectedBusiness && location.trim() && keywords.trim();
@@ -396,20 +581,58 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
             </div>
           )}
 
-          {/* Location Input */}
-          <div>
+          {/* Location Input with Google Places Autocomplete */}
+          <div className="relative">
             <label className="block text-sm font-medium text-zinc-900 mb-2">
               Target Location *
             </label>
             <div className="flex space-x-2">
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => onLocationChange(e.target.value)}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-zinc-700 placeholder:text-zinc-400"
-                placeholder="Los Angeles, CA"
-                disabled={isLoading}
-              />
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={location}
+                  onChange={(e) => onLocationChange(e.target.value)}
+                  onFocus={handleLocationInputFocus}
+                  onBlur={handleLocationInputBlur}
+                  onKeyDown={handleLocationInputKeyDown}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-zinc-700 placeholder:text-zinc-400"
+                  placeholder="Start typing a city name..."
+                  disabled={isLoading}
+                />
+
+                {/* Loading indicator for location suggestions */}
+                {isLoadingLocationSuggestions && (
+                  <div className="absolute right-3 top-2.5">
+                    <LoadingSpinner size="small" />
+                  </div>
+                )}
+
+                {/* Google Places Autocomplete Suggestions Dropdown */}
+                {showLocationSuggestions && locationSuggestions.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    {locationSuggestions.map((suggestion, index) => (
+                      <button
+                        key={suggestion.place_id || index}
+                        type="button"
+                        className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-b-0"
+                        onClick={() =>
+                          handleLocationSuggestionClick(suggestion)
+                        }
+                      >
+                        <div className="text-sm font-medium text-gray-900">
+                          {suggestion.structured_formatting.main_text}
+                        </div>
+                        {suggestion.structured_formatting.secondary_text && (
+                          <div className="text-xs text-gray-600">
+                            {suggestion.structured_formatting.secondary_text}
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={handleUseCurrentLocation}
                 disabled={locationLoading || isLoading || !mapsLoaded}
@@ -564,8 +787,8 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
               💡 Tips for Better Results
             </h4>
             <ul className="text-xs text-blue-800 space-y-1">
+              <li>• Start typing a city name to see location suggestions</li>
               <li>• Use specific keywords your customers search for</li>
-              <li>• Include your city/area in the location field</li>
               <li>• Try variations of your business name if not found</li>
               <li>• Analysis covers a 25km radius by default</li>
             </ul>

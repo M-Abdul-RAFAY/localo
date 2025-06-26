@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { RankingData } from "@/types";
-import { useGoogleMaps } from "../hooks/useGoogleMaps";
 import { ErrorBoundary, MapErrorFallback } from "./ErrorBoundary";
 import { MapSkeleton, LoadingSpinner } from "./LoadingSkeletons";
 
@@ -12,356 +11,250 @@ interface RankingMapProps {
 
 const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
-  const circlesRef = useRef<google.maps.Circle[]>([]);
-  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
-
+  const mapInstanceRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
   const [mapError, setMapError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [leafletLoaded, setLeafletLoaded] = useState(false);
 
-  const { isLoaded: mapsLoaded, loadError, isLoading } = useGoogleMaps();
-
-  // Clean up map resources
-  const cleanupMap = useCallback(() => {
-    // Clear existing markers
-    markersRef.current.forEach((marker) => {
-      marker.setMap(null);
-    });
-    markersRef.current = [];
-
-    // Clear existing circles
-    circlesRef.current.forEach((circle) => {
-      circle.setMap(null);
-    });
-    circlesRef.current = [];
-
-    // Close info window
-    if (infoWindowRef.current) {
-      infoWindowRef.current.close();
-    }
-  }, []);
-
-  // Initialize or update map
-  const initializeMap = useCallback(() => {
-    if (!data || !mapsLoaded || !mapRef.current) {
-      console.log("Map initialization skipped:", {
-        data: !!data,
-        mapsLoaded,
-        mapRef: !!mapRef.current,
-      });
-      return;
-    }
-
-    // Validate that we have valid center coordinates
-    if (
-      !data.center ||
-      typeof data.center.lat !== "number" ||
-      typeof data.center.lng !== "number"
-    ) {
-      console.error("Invalid center coordinates:", data.center);
-      setMapError("Invalid map center coordinates");
-      setIsInitializing(false);
-      return;
-    }
-
-    // Validate that we have businesses with coordinates
-    const businessesWithCoords = data.businesses.filter(
-      (b) =>
-        b.lat &&
-        b.lng &&
-        typeof b.lat === "number" &&
-        typeof b.lng === "number" &&
-        !isNaN(b.lat) &&
-        !isNaN(b.lng)
-    );
-
-    if (businessesWithCoords.length === 0) {
-      console.error("No businesses with valid coordinates found");
-      setMapError("No businesses with valid coordinates to display");
-      setIsInitializing(false);
-      return;
-    }
-
-    try {
-      setIsInitializing(true);
-      setMapError(null);
-
-      console.log("Initializing map with center:", data.center);
-      console.log("Businesses with coordinates:", businessesWithCoords.length);
-
-      // Clean up existing map elements
-      cleanupMap();
-
-      // Create or update map
-      if (!mapInstanceRef.current) {
-        mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
-          center: data.center,
-          zoom: 11,
-          mapTypeControl: true,
-          streetViewControl: true,
-          fullscreenControl: true,
-          zoomControl: false, // We'll add custom controls
-          styles: [
-            {
-              featureType: "poi",
-              elementType: "labels",
-              stylers: [{ visibility: "off" }],
-            },
-            {
-              featureType: "transit",
-              elementType: "labels",
-              stylers: [{ visibility: "off" }],
-            },
-          ],
-        });
-
-        console.log("Map instance created");
-      } else {
-        // Update existing map center
-        mapInstanceRef.current.setCenter(data.center);
-        console.log("Map center updated");
-      }
-
-      // Create info window (reuse single instance)
-      if (!infoWindowRef.current) {
-        infoWindowRef.current = new window.google.maps.InfoWindow();
-      }
-
-      // Add markers and circles for each business with valid coordinates
-      businessesWithCoords.forEach((business, index) => {
-        if (!mapInstanceRef.current) return;
-
-        const position = { lat: business.lat!, lng: business.lng! };
-        console.log(`Adding marker for ${business.name} at:`, position);
-
-        // Create marker
-        const marker = new window.google.maps.Marker({
-          position: position,
-          map: mapInstanceRef.current,
-          icon: {
-            path: window.google.maps.SymbolPath.CIRCLE,
-            scale: business.isTarget ? 25 : business.rank! > 10 ? 20 : 18,
-            fillColor: business.isTarget
-              ? "#3b82f6" // Blue for target business
-              : business.rank! > 10
-              ? "#dc2626" // Red for low ranks
-              : business.rank! > 3
-              ? "#f59e0b" // Orange for medium ranks
-              : "#10b981", // Green for top ranks
-            fillOpacity: 0.8,
-            strokeColor: business.isTarget ? "#1e40af" : "#ffffff",
-            strokeWeight: business.isTarget ? 3 : 2,
-          },
-          label: {
-            text: business.rank! > 20 ? "20+" : business.rank!.toString(),
-            color: "#ffffff",
-            fontSize: "12px",
-            fontWeight: "bold",
-          },
-          title: business.name,
-        });
-
-        // Create info window content
-        const infoContent = `
-          <div class="p-3 min-w-48 max-w-64">
-            <h3 class="font-semibold text-sm mb-2 ${
-              business.isTarget ? "text-blue-600" : "text-gray-900"
-            }">${business.name}</h3>
-            <div class="text-xs text-gray-600 space-y-1">
-              <p><strong>Rank:</strong> #${business.rank}</p>
-              <p><strong>Visibility:</strong> ${business.visibility}%</p>
-              <p><strong>Difficulty:</strong> ${business.difficulty}</p>
-              ${
-                business.rating
-                  ? `<p><strong>Rating:</strong> ${business.rating} ⭐ (${
-                      business.reviews || 0
-                    } reviews)</p>`
-                  : ""
-              }
-              ${
-                business.isTarget
-                  ? '<p class="text-blue-600 font-medium mt-2">🎯 Your Business</p>'
-                  : ""
-              }
-              <p class="text-xs text-gray-500 mt-2">${business.address}</p>
-            </div>
-          </div>
-        `;
-
-        // Add click listener for info window
-        marker.addListener("click", () => {
-          if (infoWindowRef.current && mapInstanceRef.current) {
-            infoWindowRef.current.setContent(infoContent);
-            infoWindowRef.current.open(mapInstanceRef.current, marker);
-          }
-        });
-
-        markersRef.current.push(marker);
-
-        // Add visibility circle for top 10 businesses
-        if (business.rank! <= 10) {
-          const circle = new window.google.maps.Circle({
-            strokeColor: business.isTarget
-              ? "#3b82f6"
-              : business.rank! > 10
-              ? "#dc2626"
-              : business.rank! > 3
-              ? "#f59e0b"
-              : "#10b981",
-            strokeOpacity: 0.2,
-            strokeWeight: 1,
-            fillColor: business.isTarget
-              ? "#3b82f6"
-              : business.rank! > 10
-              ? "#dc2626"
-              : business.rank! > 3
-              ? "#f59e0b"
-              : "#10b981",
-            fillOpacity: 0.08,
-            map: mapInstanceRef.current,
-            center: position,
-            radius: business.rank! > 5 ? 1500 : 2500, // Smaller radius for lower ranks
-          });
-
-          circlesRef.current.push(circle);
+  // Load Leaflet dynamically
+  useEffect(() => {
+    const loadLeaflet = async () => {
+      try {
+        // Load Leaflet CSS
+        if (!document.querySelector('link[href*="leaflet.css"]')) {
+          const link = document.createElement("link");
+          link.rel = "stylesheet";
+          link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+          document.head.appendChild(link);
         }
-      });
 
-      console.log(`Added ${markersRef.current.length} markers to map`);
-
-      // Fit map to show all markers
-      if (markersRef.current.length > 0) {
-        const bounds = new window.google.maps.LatLngBounds();
-        markersRef.current.forEach((marker) => {
-          const position = marker.getPosition();
-          if (position) {
-            bounds.extend(position);
-          }
-        });
-
-        mapInstanceRef.current.fitBounds(bounds);
-        console.log("Map bounds fitted to markers");
-
-        // Ensure minimum zoom level
-        const listener = window.google.maps.event.addListener(
-          mapInstanceRef.current,
-          "idle",
-          () => {
-            if (mapInstanceRef.current!.getZoom() > 15) {
-              mapInstanceRef.current!.setZoom(15);
-            }
-            window.google.maps.event.removeListener(listener);
-          }
-        );
-      } else {
-        // If no markers, just center on the provided location
-        mapInstanceRef.current.setCenter(data.center);
-        mapInstanceRef.current.setZoom(11);
-      }
-
-      setIsInitializing(false);
-      console.log("Map initialization completed successfully");
-    } catch (error) {
-      console.error("Map initialization error:", error);
-      setMapError(
-        error instanceof Error ? error.message : "Failed to initialize map"
-      );
-      setIsInitializing(false);
-    }
-  }, [data, mapsLoaded, cleanupMap]);
-
-  // Initialize map when data or maps loaded state changes
-  useEffect(() => {
-    if (mapsLoaded && data) {
-      console.log("Effect triggered - initializing map");
-      initializeMap();
-    }
-  }, [data, mapsLoaded, initializeMap]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      console.log("Cleaning up map on unmount");
-      cleanupMap();
-      if (infoWindowRef.current) {
-        infoWindowRef.current.close();
+        // Load Leaflet JS
+        if (!(window as any).L) {
+          const script = document.createElement("script");
+          script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+          script.onload = () => setLeafletLoaded(true);
+          document.head.appendChild(script);
+        } else {
+          setLeafletLoaded(true);
+        }
+      } catch (error) {
+        console.error("Failed to load Leaflet:", error);
+        setMapError("Failed to load map library");
       }
     };
-  }, [cleanupMap]);
 
-  const handleZoomIn = useCallback((): void => {
-    if (mapInstanceRef.current) {
-      const currentZoom = mapInstanceRef.current.getZoom() || 11;
-      mapInstanceRef.current.setZoom(Math.min(currentZoom + 1, 20));
-    }
+    loadLeaflet();
   }, []);
 
-  const handleZoomOut = useCallback((): void => {
-    if (mapInstanceRef.current) {
-      const currentZoom = mapInstanceRef.current.getZoom() || 11;
-      mapInstanceRef.current.setZoom(Math.max(currentZoom - 1, 1));
-    }
-  }, []);
+  // Initialize map when Leaflet is loaded and data is available
+  useEffect(() => {
+    if (!leafletLoaded || !data || !mapRef.current) return;
 
-  const handleRecenter = useCallback((): void => {
-    if (mapInstanceRef.current && data) {
-      if (markersRef.current.length > 0) {
-        // Fit to markers
-        const bounds = new window.google.maps.LatLngBounds();
-        markersRef.current.forEach((marker) => {
-          const position = marker.getPosition();
-          if (position) {
-            bounds.extend(position);
+    const initializeMap = () => {
+      try {
+        setIsInitializing(true);
+        setMapError(null);
+
+        // Clean up existing map
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.remove();
+          mapInstanceRef.current = null;
+          markersRef.current = [];
+        }
+
+        const L = (window as any).L;
+
+        // Create map
+        mapInstanceRef.current = L.map(mapRef.current).setView(
+          [data.center.lat, data.center.lng],
+          11
+        );
+
+        // Add OpenStreetMap tiles
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "© OpenStreetMap contributors",
+          maxZoom: 19,
+        }).addTo(mapInstanceRef.current);
+
+        // Filter businesses with valid coordinates
+        const businessesWithCoords = data.businesses.filter(
+          (b) => b.lat && b.lng && !isNaN(b.lat) && !isNaN(b.lng)
+        );
+
+        if (businessesWithCoords.length === 0) {
+          setMapError("No businesses with valid coordinates to display");
+          setIsInitializing(false);
+          return;
+        }
+
+        // Create custom icon function
+        const createCustomIcon = (business: any) => {
+          const color = business.isTarget
+            ? "#3b82f6" // Blue for target business
+            : business.rank > 10
+            ? "#dc2626" // Red for low ranks
+            : business.rank > 3
+            ? "#f59e0b" // Orange for medium ranks
+            : "#10b981"; // Green for top ranks
+
+          const size = business.isTarget ? 30 : business.rank > 10 ? 25 : 20;
+
+          return L.divIcon({
+            html: `
+              <div style="
+                background-color: ${color};
+                width: ${size}px;
+                height: ${size}px;
+                border-radius: 50%;
+                border: ${business.isTarget ? "3px" : "2px"} solid white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: bold;
+                font-size: 12px;
+                color: white;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+              ">
+                ${business.rank > 20 ? "20+" : business.rank}
+              </div>
+            `,
+            className: "custom-marker",
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2],
+          });
+        };
+
+        // Add markers for each business
+        businessesWithCoords.forEach((business) => {
+          const marker = L.marker([business.lat, business.lng], {
+            icon: createCustomIcon(business),
+          }).addTo(mapInstanceRef.current);
+
+          // Create popup content
+          const popupContent = `
+            <div style="min-width: 200px; max-width: 250px;">
+              <h3 style="margin: 0 0 8px 0; font-weight: bold; color: ${
+                business.isTarget ? "#3b82f6" : "#374151"
+              };">${business.name}</h3>
+              <div style="font-size: 12px; color: #6b7280; line-height: 1.4;">
+                <p style="margin: 2px 0;"><strong>Rank:</strong> #${
+                  business.rank
+                }</p>
+                <p style="margin: 2px 0;"><strong>Visibility:</strong> ${
+                  business.visibility
+                }%</p>
+                <p style="margin: 2px 0;"><strong>Difficulty:</strong> ${
+                  business.difficulty
+                }</p>
+                ${
+                  business.rating
+                    ? `<p style="margin: 2px 0;"><strong>Rating:</strong> ${
+                        business.rating
+                      } ⭐ (${business.reviews || 0} reviews)</p>`
+                    : ""
+                }
+                ${
+                  business.isTarget
+                    ? '<p style="margin: 4px 0 2px 0; color: #3b82f6; font-weight: bold;">🎯 Your Business</p>'
+                    : ""
+                }
+                <p style="margin: 4px 0 0 0; font-size: 11px; color: #9ca3af;">${
+                  business.address
+                }</p>
+              </div>
+            </div>
+          `;
+
+          marker.bindPopup(popupContent);
+          markersRef.current.push(marker);
+
+          // Add visibility circle for top 10 businesses
+          if (business.rank <= 10) {
+            const color = business.isTarget
+              ? "#3b82f6"
+              : business.rank > 10
+              ? "#dc2626"
+              : business.rank > 3
+              ? "#f59e0b"
+              : "#10b981";
+
+            L.circle([business.lat, business.lng], {
+              color: color,
+              fillColor: color,
+              fillOpacity: 0.08,
+              weight: 1,
+              opacity: 0.2,
+              radius: business.rank > 5 ? 1500 : 2500,
+            }).addTo(mapInstanceRef.current);
           }
         });
-        mapInstanceRef.current.fitBounds(bounds);
+
+        // Fit map to show all markers
+        if (markersRef.current.length > 0) {
+          const group = L.featureGroup(markersRef.current);
+          mapInstanceRef.current.fitBounds(group.getBounds(), {
+            padding: [20, 20],
+          });
+
+          // Ensure minimum zoom level
+          if (mapInstanceRef.current.getZoom() > 15) {
+            mapInstanceRef.current.setZoom(15);
+          }
+        }
+
+        setIsInitializing(false);
+        console.log("OpenStreetMap initialized successfully");
+      } catch (error) {
+        console.error("Map initialization error:", error);
+        setMapError(
+          error instanceof Error ? error.message : "Failed to initialize map"
+        );
+        setIsInitializing(false);
+      }
+    };
+
+    initializeMap();
+
+    // Cleanup on unmount
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+        markersRef.current = [];
+      }
+    };
+  }, [leafletLoaded, data]);
+
+  const handleZoomIn = () => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.zoomIn();
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.zoomOut();
+    }
+  };
+
+  const handleRecenter = () => {
+    if (mapInstanceRef.current && data) {
+      if (markersRef.current.length > 0) {
+        const L = (window as any).L;
+        const group = L.featureGroup(markersRef.current);
+        mapInstanceRef.current.fitBounds(group.getBounds(), {
+          padding: [20, 20],
+        });
       } else {
-        // Fallback to center
-        mapInstanceRef.current.setCenter(data.center);
-        mapInstanceRef.current.setZoom(11);
+        mapInstanceRef.current.setView([data.center.lat, data.center.lng], 11);
       }
     }
-  }, [data]);
+  };
 
-  // Show loading skeleton while maps are loading
-  if (isLoading || (!mapsLoaded && !loadError)) {
+  // Show loading skeleton while Leaflet is loading
+  if (!leafletLoaded) {
     return <MapSkeleton />;
-  }
-
-  // Show error state if maps failed to load
-  if (loadError) {
-    return (
-      <div className="w-full h-96 bg-red-50 rounded-lg border border-red-200 flex items-center justify-center">
-        <div className="text-center p-6">
-          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <svg
-              className="w-6 h-6 text-red-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m0 0L9 7"
-              />
-            </svg>
-          </div>
-          <h3 className="text-sm font-medium text-red-900 mb-2">
-            Google Maps Failed to Load
-          </h3>
-          <p className="text-xs text-red-700 mb-3">{loadError}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-          >
-            Reload Page
-          </button>
-        </div>
-      </div>
-    );
   }
 
   // Show map error state
@@ -389,10 +282,10 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
           </h3>
           <p className="text-xs text-yellow-700 mb-3">{mapError}</p>
           <button
-            onClick={initializeMap}
+            onClick={() => window.location.reload()}
             className="px-3 py-1 text-xs bg-yellow-600 text-white rounded hover:bg-yellow-700 transition-colors"
           >
-            Retry
+            Reload Page
           </button>
         </div>
       </div>
@@ -449,7 +342,7 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
       )}
 
       {/* Custom Controls */}
-      <div className="absolute top-4 right-4 flex flex-col space-y-2">
+      <div className="absolute top-4 right-4 flex flex-col space-y-2 z-[1000]">
         <button
           onClick={handleZoomIn}
           className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors"
@@ -524,7 +417,7 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-md p-3 max-w-48">
+      <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-md p-3 max-w-48 z-[1000]">
         <h4 className="text-xs font-semibold text-gray-900 mb-2">Map Legend</h4>
         <div className="space-y-1 text-xs">
           <div className="flex items-center space-x-2">
@@ -548,7 +441,7 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
 
       {/* Business Count */}
       {data.businesses.length > 0 && (
-        <div className="absolute top-4 left-4 bg-white rounded-lg shadow-md px-3 py-2">
+        <div className="absolute top-4 left-4 bg-white rounded-lg shadow-md px-3 py-2 z-[1000]">
           <p className="text-sm font-medium text-gray-900">
             {data.businesses.filter((b) => b.lat && b.lng).length} businesses
             shown
