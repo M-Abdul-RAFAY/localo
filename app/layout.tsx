@@ -107,23 +107,6 @@ export default function RootLayout({ children }: RootLayoutProps) {
         <main id="main-content">{children}</main>
 
         {/* Footer */}
-        <footer className="bg-white border-t border-gray-200 py-8 mt-12">
-          <div className="container mx-auto px-4">
-            <div className="text-center">
-              <p className="text-gray-600 text-sm">
-                © {new Date().getFullYear()} Local Business Ranking Tool.
-                Powered by Google Places API.
-              </p>
-              <div className="mt-2 space-x-4 text-xs text-gray-500">
-                <span>Track rankings</span>
-                <span>•</span>
-                <span>Analyze competitors</span>
-                <span>•</span>
-                <span>Improve local SEO</span>
-              </div>
-            </div>
-          </div>
-        </footer>
       </body>
     </html>
   );

@@ -9,8 +9,6 @@ import {
 } from "@/types";
 import BusinessSearch from "./components/BusinessSearch";
 import CompetitorsList from "./components/CompetitorsList";
-import SearchFiltersComponent from "./components/SearchFilters";
-import ExportOptions from "./components/ExportOptions";
 import { ErrorBoundary, DataErrorFallback } from "./components/ErrorBoundary";
 import { DataLoadingSkeleton } from "./components/LoadingSkeletons";
 
@@ -311,20 +309,7 @@ const HomePage: React.FC = () => {
                     <DataErrorFallback error={error} retry={retry} />
                   </div>
                 )}
-              >
-                <SearchFiltersComponent
-                  filters={filters}
-                  onFiltersChange={handleFiltersChange}
-                  onApplyFilters={handleApplyFilters}
-                />
-              </ErrorBoundary>
-
-              {/* Export Options */}
-              {rankingData && (
-                <ErrorBoundary fallback={DataErrorFallback}>
-                  <ExportOptions data={rankingData} onExport={handleExport} />
-                </ErrorBoundary>
-              )}
+              ></ErrorBoundary>
             </div>
 
             {/* Main Content - Map and Results */}

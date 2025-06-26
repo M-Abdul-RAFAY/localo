@@ -636,7 +636,7 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
               <button
                 onClick={handleUseCurrentLocation}
                 disabled={locationLoading || isLoading || !mapsLoaded}
-                className="px-3 py-2 border text-zinc-900 border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-3 py-2 border rounded-full  text-white border-gray-300 bg-blue-700 hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="Use current location"
                 type="button"
               >
@@ -686,32 +686,6 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
             <p className="text-xs text-zinc-700 mt-1">
               Enter the main keywords customers use to find your business
             </p>
-          </div>
-
-          {/* Quick Keyword Suggestions */}
-          <div>
-            <p className="text-xs font-medium text-zinc-900 mb-2">
-              Quick Suggestions:
-            </p>
-            <div className="flex flex-wrap text-zinc-700 gap-2">
-              {[
-                "security guard service",
-                "private security",
-                "security company",
-                "security agency",
-                "protection services",
-              ].map((suggestion) => (
-                <button
-                  key={suggestion}
-                  onClick={() => onKeywordsChange(suggestion)}
-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border transition-colors"
-                  type="button"
-                  disabled={isLoading}
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Analyze Button */}
