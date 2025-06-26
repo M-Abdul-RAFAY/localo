@@ -243,7 +243,9 @@ const CompetitorsList: React.FC<CompetitorsListProps> = ({
                   {/* Business Info */}
                   <div className="flex-1 min-w-0">
                     <h4 className="font-semibold text-gray-900 truncate">
-                      {competitor.name}
+                      {competitor.name.length > 22
+                        ? competitor.name.slice(0, 40) + "..."
+                        : competitor.name}
                     </h4>
                     <div className="flex items-center space-x-4 mt-1">
                       {competitor.rating && (
