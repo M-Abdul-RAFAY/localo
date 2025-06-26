@@ -3,16 +3,24 @@
 import React, { useState } from "react";
 import { SearchFilters as SearchFiltersType } from "@/types";
 
-interface SearchFiltersProps {
+export interface SearchFiltersProps {
   filters: SearchFiltersType;
   onFiltersChange: (filters: SearchFiltersType) => void;
-  onApplyFilters?: () => void; // Trigger re-analysis when filters change
+  onApplyFilters?: () => void;
+  showGrid?: boolean;
+  onToggleGrid?: (show: boolean) => void;
+  gridDensity?: "default" | "dense" | "wide";
+  onGridDensityChange?: (density: "default" | "dense" | "wide") => void;
 }
 
 const SearchFilters: React.FC<SearchFiltersProps> = ({
   filters,
   onFiltersChange,
   onApplyFilters,
+  showGrid = true,
+  onToggleGrid,
+  gridDensity = "default",
+  onGridDensityChange,
 }) => {
   const [resetConfirm, setResetConfirm] = useState<boolean>(false);
 
@@ -72,6 +80,96 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
       <h3 className="font-semibold text-gray-900 mb-4">Search Filters</h3>
 
       <div className="space-y-6">
+        {/* Grid Overlay Controls */}
+        <div className="border-b border-gray-200 pb-6">
+          <h4 className="text-sm font-medium text-gray-900 mb-4">
+            Grid Overlay
+          </h4>
+
+          {/* Toggle Grid */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700">
+                Show Analysis Grid
+              </label>
+              <p className="text-xs text-gray-500">
+                Display geo-grid points for ranking analysis
+              </p>
+            </div>
+            <button
+              onClick={() => onToggleGrid && onToggleGrid(!showGrid)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                showGrid ? "bg-blue-600" : "bg-gray-200"
+              }`}
+              type="button"
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  showGrid ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Grid Density */}
+          {showGrid && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Grid Density
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() =>
+                    onGridDensityChange && onGridDensityChange("default")
+                  }
+                  className={`py-2 px-3 text-sm rounded-md border transition-colors ${
+                    gridDensity === "default"
+                      ? "border-blue-500 bg-blue-50 text-blue-700 font-medium"
+                      : "border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+                  }`}
+                  type="button"
+                >
+                  Default
+                </button>
+                <button
+                  onClick={() =>
+                    onGridDensityChange && onGridDensityChange("dense")
+                  }
+                  className={`py-2 px-3 text-sm rounded-md border transition-colors ${
+                    gridDensity === "dense"
+                      ? "border-blue-500 bg-blue-50 text-blue-700 font-medium"
+                      : "border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+                  }`}
+                  type="button"
+                >
+                  Dense
+                </button>
+                <button
+                  onClick={() =>
+                    onGridDensityChange && onGridDensityChange("wide")
+                  }
+                  className={`py-2 px-3 text-sm rounded-md border transition-colors ${
+                    gridDensity === "wide"
+                      ? "border-blue-500 bg-blue-50 text-blue-700 font-medium"
+                      : "border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+                  }`}
+                  type="button"
+                >
+                  Wide
+                </button>
+              </div>
+              <div className="mt-2 text-xs text-gray-500">
+                {gridDensity === "default" &&
+                  "7 rings up to 3.5km, standard coverage"}
+                {gridDensity === "dense" &&
+                  "7 rings up to 2.5km, detailed analysis"}
+                {gridDensity === "wide" &&
+                  "7 rings up to 15km, broad market coverage"}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Search Radius */}
         <div>
           <div className="flex justify-between items-center mb-2">

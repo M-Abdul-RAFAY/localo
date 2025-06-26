@@ -18,8 +18,10 @@ interface BusinessSearchProps {
   onBusinessSelect: (business: Business | null) => void;
   location: string;
   onLocationChange: (location: string) => void;
-  keywords: string;
-  onKeywordsChange: (keywords: string) => void;
+  keywords: string[];
+  onKeywordsChange: (keywords: string[]) => void;
+  maxCompetitors: number;
+  onMaxCompetitorsChange: (max: number) => void;
   onAnalyze: () => void;
   isLoading: boolean;
 }
@@ -40,6 +42,8 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
   onLocationChange,
   keywords,
   onKeywordsChange,
+  maxCompetitors,
+  onMaxCompetitorsChange,
   onAnalyze,
   isLoading,
 }) => {
@@ -48,6 +52,7 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [searchError, setSearchError] = useState<string>("");
   const [hasSearched, setHasSearched] = useState<boolean>(false);
+  const [currentKeyword, setCurrentKeyword] = useState<string>("");
 
   // Location suggestions state
   const [showLocationSuggestions, setShowLocationSuggestions] =
@@ -93,11 +98,9 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
   // Initialize Google services when maps are loaded
   useEffect(() => {
     if (mapsLoaded && window.google) {
-      // Initialize AutocompleteService for location suggestions
       autocompleteServiceRef.current =
         new window.google.maps.places.AutocompleteService();
 
-      // Initialize PlacesService for place details
       const mapDiv = document.createElement("div");
       placesServiceRef.current = new window.google.maps.places.PlacesService(
         mapDiv
@@ -125,9 +128,6 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
       autocompleteServiceRef.current.getPlacePredictions(
         request,
         (predictions, status) => {
-          console.log("Autocomplete status:", status);
-          console.log("Predictions:", predictions);
-
           if (
             status === google.maps.places.PlacesServiceStatus.OK &&
             predictions
@@ -146,10 +146,9 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
               })
             );
 
-            setLocationSuggestions(suggestions.slice(0, 5)); // Limit to 5 suggestions
+            setLocationSuggestions(suggestions.slice(0, 5));
             setShowLocationSuggestions(suggestions.length > 0);
           } else {
-            console.warn("No location predictions found:", status);
             setLocationSuggestions([]);
             setShowLocationSuggestions(false);
           }
@@ -235,12 +234,8 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
 
   const handleUseCurrentLocation = async (): Promise<void> => {
     try {
-      console.log("Getting current location...");
       const position = await getCurrentLocation();
-      console.log("Got position:", position);
-
       if (position) {
-        // Use reverse geocoding to get address
         if (placesService && window.google) {
           const geocoder = new window.google.maps.Geocoder();
           const latlng = new window.google.maps.LatLng(
@@ -249,31 +244,22 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
           );
 
           geocoder.geocode({ location: latlng }, (results, status) => {
-            console.log("Reverse geocoding status:", status);
-            console.log("Reverse geocoding results:", results);
-
             if (status === "OK" && results?.[0]) {
-              // Get the formatted address
               const address = results[0].formatted_address;
-              console.log("Setting location to:", address);
               onLocationChange(address);
               setShowLocationSuggestions(false);
             } else {
-              // Fallback to coordinates
               const coordsString = `${position.lat.toFixed(
                 4
               )}, ${position.lng.toFixed(4)}`;
-              console.log("Fallback to coordinates:", coordsString);
               onLocationChange(coordsString);
               setShowLocationSuggestions(false);
             }
           });
         } else {
-          // Fallback to coordinates if geocoder not available
           const coordsString = `${position.lat.toFixed(
             4
           )}, ${position.lng.toFixed(4)}`;
-          console.log("Direct coordinates fallback:", coordsString);
           onLocationChange(coordsString);
           setShowLocationSuggestions(false);
         }
@@ -289,7 +275,7 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
   const handleBusinessSelect = (business: Business): void => {
     onBusinessSelect(business);
     setBusinessName(business.name);
-    setBusinesses([]); // Hide dropdown after selection
+    setBusinesses([]);
     setHasSearched(false);
   };
 
@@ -303,39 +289,10 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
   const handleLocationSuggestionClick = async (
     suggestion: LocationSuggestion
   ): Promise<void> => {
-    console.log("Selected location suggestion:", suggestion);
-
-    // Immediately update the location field and hide suggestions
     onLocationChange(suggestion.description);
     setShowLocationSuggestions(false);
-    setLocationSuggestions([]); // Clear suggestions array
-    setIsLoadingLocationSuggestions(false); // Ensure loading state is cleared
-
-    // Optionally, get more detailed place information in the background
-    if (suggestion.place_id && placesServiceRef.current) {
-      try {
-        const request: google.maps.places.PlaceDetailsRequest = {
-          placeId: suggestion.place_id,
-          fields: ["formatted_address", "geometry", "name"],
-        };
-
-        placesServiceRef.current.getDetails(request, (place, status) => {
-          if (status === google.maps.places.PlacesServiceStatus.OK && place) {
-            console.log("Place details:", place);
-            // Use the more detailed address if available
-            if (
-              place.formatted_address &&
-              place.formatted_address !== suggestion.description
-            ) {
-              onLocationChange(place.formatted_address);
-            }
-          }
-        });
-      } catch (error) {
-        console.error("Error getting place details:", error);
-        // Keep the original description if place details fail
-      }
-    }
+    setLocationSuggestions([]);
+    setIsLoadingLocationSuggestions(false);
   };
 
   const handleLocationInputFocus = (): void => {
@@ -345,7 +302,6 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
   };
 
   const handleLocationInputBlur = (): void => {
-    // Use a longer delay to ensure click events on suggestions are processed
     setTimeout(() => {
       setShowLocationSuggestions(false);
     }, 300);
@@ -358,15 +314,24 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
     }
   };
 
-  const canAnalyze = selectedBusiness && location.trim() && keywords.trim();
+  const handleAddKeyword = (): void => {
+    if (currentKeyword.trim() && !keywords.includes(currentKeyword.trim())) {
+      onKeywordsChange([...keywords, currentKeyword.trim()]);
+      setCurrentKeyword("");
+    }
+  };
+
+  const handleRemoveKeyword = (index: number): void => {
+    const newKeywords = keywords.filter((_, i) => i !== index);
+    onKeywordsChange(newKeywords);
+  };
+
+  const canAnalyze = selectedBusiness && location.trim() && keywords.length > 0;
 
   // Show Google Maps loading state
   if (mapsLoading) {
     return (
       <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-lg font-semibold mb-4 text-zinc-900">
-          Business Search
-        </h2>
         <div className="flex items-center justify-center py-8">
           <div className="text-center">
             <LoadingSpinner size="large" />
@@ -381,9 +346,6 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
   if (mapsError) {
     return (
       <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-lg font-semibold mb-4 text-zinc-900">
-          Business Search
-        </h2>
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <div className="flex">
             <svg
@@ -420,11 +382,7 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
   return (
     <ErrorBoundary fallback={DataErrorFallback}>
       <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-lg font-semibold mb-4 text-zinc-900">
-          Business Search
-        </h2>
-
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Business Name Search */}
           <div>
             <label className="block text-sm font-medium text-zinc-900 mb-2">
@@ -440,14 +398,12 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
                 disabled={isLoading || !mapsLoaded}
               />
 
-              {/* Loading Spinner */}
               {isSearching && (
                 <div className="absolute right-10 top-2.5">
                   <LoadingSpinner size="small" />
                 </div>
               )}
 
-              {/* Clear Button */}
               {businessName && (
                 <button
                   onClick={() => {
@@ -479,110 +435,71 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
               <p className="text-red-600 text-sm mt-1">{searchError}</p>
             )}
 
-            {/* No results message */}
-            {hasSearched &&
-              !isSearching &&
-              businesses.length === 0 &&
-              !searchError && (
-                <p className="text-gray-500 text-sm mt-1">
-                  No businesses found for "{debouncedBusinessName}"
-                </p>
-              )}
-          </div>
+            {/* Business Selection Dropdown */}
+            {isSearching && <BusinessListSkeleton />}
 
-          {/* Business Selection Dropdown */}
-          {isSearching && <BusinessListSkeleton />}
-
-          {businesses.length > 0 && !selectedBusiness && !isSearching && (
-            <div>
-              <label className="block text-sm font-medium text-zinc-900 mb-2">
-                Select Your Business ({businesses.length} found)
-              </label>
-              <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-md">
-                {businesses.map((business) => (
-                  <div
-                    key={business.id}
-                    onClick={() => handleBusinessSelect(business)}
-                    className="p-3 hover:bg-gray-50 cursor-pointer transition-colors border-b border-gray-100 last:border-b-0"
-                  >
-                    <div className="font-medium text-sm text-gray-900">
-                      {business.name}
-                    </div>
-                    <div className="text-xs text-gray-600 mt-1">
-                      {business.address}
-                    </div>
-                    {business.rating && (
-                      <div className="flex items-center space-x-2 mt-2">
-                        <div className="flex text-yellow-400 text-xs">
-                          {"★".repeat(Math.floor(business.rating))}
-                          {"☆".repeat(5 - Math.floor(business.rating))}
-                        </div>
-                        <span className="text-xs text-gray-500">
-                          ({business.rating}) • {business.reviews || 0} reviews
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Selected Business Display */}
-          {selectedBusiness && (
-            <div>
-              <label className="block text-sm font-medium text-zinc-900 mb-2">
-                Selected Business
-              </label>
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h4 className="font-medium text-sm text-gray-900">
-                      {selectedBusiness.name}
-                    </h4>
-                    <p className="text-xs text-gray-600 mt-1">
-                      {selectedBusiness.address}
-                    </p>
-                    {selectedBusiness.rating && (
-                      <div className="flex items-center space-x-2 mt-2">
-                        <div className="flex text-yellow-400 text-xs">
-                          {"★".repeat(Math.floor(selectedBusiness.rating))}
-                          {"☆".repeat(5 - Math.floor(selectedBusiness.rating))}
-                        </div>
-                        <span className="text-xs text-gray-500">
-                          ({selectedBusiness.rating}) •{" "}
-                          {selectedBusiness.reviews || 0} reviews
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    onClick={clearBusinessSelection}
-                    className="ml-2 text-gray-400 hover:text-gray-600"
-                    type="button"
-                    title="Change business"
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+            {businesses.length > 0 && !selectedBusiness && !isSearching && (
+              <div className="mt-2">
+                <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-md">
+                  {businesses.slice(0, 5).map((business) => (
+                    <div
+                      key={business.id}
+                      onClick={() => handleBusinessSelect(business)}
+                      className="p-3 hover:bg-gray-50 cursor-pointer transition-colors border-b border-gray-100 last:border-b-0"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
+                      <div className="font-medium text-sm text-gray-900">
+                        {business.name}
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1">
+                        {business.address}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Location Input with Google Places Autocomplete */}
-          <div className="relative">
+            {/* Selected Business Display */}
+            {selectedBusiness && (
+              <div className="mt-2">
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h4 className="font-medium text-sm text-gray-900">
+                        {selectedBusiness.name}
+                      </h4>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {selectedBusiness.address}
+                      </p>
+                    </div>
+                    <button
+                      onClick={clearBusinessSelection}
+                      className="ml-2 text-gray-400 hover:text-gray-600"
+                      type="button"
+                      title="Change business"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Location Input */}
+          <div>
             <label className="block text-sm font-medium text-zinc-900 mb-2">
               Target Location *
             </label>
@@ -596,18 +513,17 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
                   onBlur={handleLocationInputBlur}
                   onKeyDown={handleLocationInputKeyDown}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-zinc-700 placeholder:text-zinc-400"
-                  placeholder="Start typing a city name..."
+                  placeholder="Enter city or address..."
                   disabled={isLoading}
                 />
 
-                {/* Loading indicator for location suggestions */}
                 {isLoadingLocationSuggestions && (
                   <div className="absolute right-3 top-2.5">
                     <LoadingSpinner size="small" />
                   </div>
                 )}
 
-                {/* Google Places Autocomplete Suggestions Dropdown */}
+                {/* Location Suggestions Dropdown */}
                 {showLocationSuggestions && locationSuggestions.length > 0 && (
                   <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
                     {locationSuggestions.map((suggestion, index) => (
@@ -636,7 +552,7 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
               <button
                 onClick={handleUseCurrentLocation}
                 disabled={locationLoading || isLoading || !mapsLoaded}
-                className="px-3 py-2 border rounded-full  text-white border-gray-300 bg-blue-700 hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-3 py-2 border rounded-full text-white border-gray-300 bg-blue-700 hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="Use current location"
                 type="button"
               >
@@ -673,22 +589,89 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
           {/* Keywords Input */}
           <div>
             <label className="block text-sm font-medium text-zinc-900 mb-2">
-              Search Keywords *
+              Keywords *
             </label>
-            <input
-              type="text"
-              value={keywords}
-              onChange={(e) => onKeywordsChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-zinc-700 placeholder:text-zinc-400"
-              placeholder="security guard service"
-              disabled={isLoading}
-            />
-            <p className="text-xs text-zinc-700 mt-1">
-              Enter the main keywords customers use to find your business
-            </p>
+            <div className="flex space-x-2">
+              <input
+                type="text"
+                value={currentKeyword}
+                onChange={(e) => setCurrentKeyword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddKeyword();
+                  }
+                }}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-zinc-700 placeholder:text-zinc-400"
+                placeholder="e.g., security guard service"
+                disabled={isLoading}
+              />
+              <button
+                onClick={handleAddKeyword}
+                disabled={!currentKeyword.trim() || isLoading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                type="button"
+              >
+                Add
+              </button>
+            </div>
+
+            {/* Keywords List */}
+            {keywords.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {keywords.map((keyword, index) => (
+                  <span
+                    key={index}
+                    className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                  >
+                    {keyword}
+                    <button
+                      onClick={() => handleRemoveKeyword(index)}
+                      className="ml-2 text-blue-600 hover:text-blue-800"
+                      type="button"
+                    >
+                      <svg
+                        className="w-3 h-3"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Analyze Button */}
+          {/* Max Competitors */}
+          <div>
+            <label className="block text-sm font-medium text-zinc-900 mb-2">
+              Max Competitors
+            </label>
+            <select
+              value={maxCompetitors}
+              onChange={(e) => onMaxCompetitorsChange(parseInt(e.target.value))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-zinc-700"
+              disabled={isLoading}
+            >
+              <option value={10}>10 Competitors</option>
+              <option value={20}>20 Competitors</option>
+              <option value={30}>30 Competitors</option>
+              <option value={50}>50 Competitors</option>
+              <option value={100}>100 Competitors</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Analyze Button */}
+        <div className="mt-6">
           <button
             onClick={onAnalyze}
             disabled={!canAnalyze || isLoading || !mapsLoaded}
@@ -723,7 +706,7 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
 
           {/* Help Text */}
           {!canAnalyze && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+            <div className="mt-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
               <div className="flex">
                 <svg
                   className="w-4 h-4 text-yellow-400 mt-0.5 mr-2 flex-shrink-0"
@@ -747,26 +730,15 @@ const BusinessSearch: React.FC<BusinessSearchProps> = ({
                       <li>• Select your business from search results</li>
                     )}
                     {!location.trim() && <li>• Enter target location</li>}
-                    {!keywords.trim() && <li>• Add search keywords</li>}
+                    {keywords.length === 0 && (
+                      <li>• Add at least one keyword</li>
+                    )}
                     {!mapsLoaded && <li>• Waiting for Google Maps to load</li>}
                   </ul>
                 </div>
               </div>
             </div>
           )}
-
-          {/* Tips Section */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <h4 className="text-sm font-medium text-zinc-900 mb-2">
-              💡 Tips for Better Results
-            </h4>
-            <ul className="text-xs text-blue-800 space-y-1">
-              <li>• Start typing a city name to see location suggestions</li>
-              <li>• Use specific keywords your customers search for</li>
-              <li>• Try variations of your business name if not found</li>
-              <li>• Analysis covers a 25km radius by default</li>
-            </ul>
-          </div>
         </div>
       </div>
     </ErrorBoundary>

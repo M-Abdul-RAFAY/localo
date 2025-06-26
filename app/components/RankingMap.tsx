@@ -4,18 +4,33 @@ import React, { useEffect, useRef, useState } from "react";
 import { RankingData } from "@/types";
 import { ErrorBoundary, MapErrorFallback } from "./ErrorBoundary";
 import { MapSkeleton, LoadingSpinner } from "./LoadingSkeletons";
+import {
+  GeoGridGenerator,
+  GeoGridSystem,
+  GeoGridUtils,
+} from "@/lib/geoGridSystem";
 
 interface RankingMapProps {
   data: RankingData;
+  showGrid?: boolean;
+  gridDensity?: "default" | "dense" | "wide";
 }
 
-const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
+const RankingMapComponent: React.FC<RankingMapProps> = ({
+  data,
+  showGrid = true,
+  gridDensity = "default",
+}) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
+  const gridMarkersRef = useRef<any[]>([]);
+  const gridCirclesRef = useRef<any[]>([]);
   const [mapError, setMapError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [leafletLoaded, setLeafletLoaded] = useState(false);
+  const [geoGrid, setGeoGrid] = useState<GeoGridSystem | null>(null);
+  const [showGridDetails, setShowGridDetails] = useState(true);
 
   // Load Leaflet dynamically
   useEffect(() => {
@@ -47,6 +62,35 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
     loadLeaflet();
   }, []);
 
+  // Generate geo-grid when data is available
+  useEffect(() => {
+    if (data && data.center) {
+      let config;
+      switch (gridDensity) {
+        case "dense":
+          config = GeoGridGenerator.getDenseConfig(
+            data.center.lat,
+            data.center.lng
+          );
+          break;
+        case "wide":
+          config = GeoGridGenerator.getWideConfig(
+            data.center.lat,
+            data.center.lng
+          );
+          break;
+        default:
+          config = GeoGridGenerator.getDefaultConfig(
+            data.center.lat,
+            data.center.lng
+          );
+      }
+      const grid = GeoGridGenerator.generate(config);
+      setGeoGrid(grid);
+      console.log("Generated geo-grid with", grid.totalPoints, "points");
+    }
+  }, [data, gridDensity]);
+
   // Initialize map when Leaflet is loaded and data is available
   useEffect(() => {
     if (!leafletLoaded || !data || !mapRef.current) return;
@@ -61,6 +105,8 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
           mapInstanceRef.current.remove();
           mapInstanceRef.current = null;
           markersRef.current = [];
+          gridMarkersRef.current = [];
+          gridCirclesRef.current = [];
         }
 
         const L = (window as any).L;
@@ -77,6 +123,11 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
           maxZoom: 19,
         }).addTo(mapInstanceRef.current);
 
+        // Add grid overlay if enabled
+        if (showGrid && geoGrid) {
+          addGridOverlay(L);
+        }
+
         // Filter businesses with valid coordinates
         const businessesWithCoords = data.businesses.filter(
           (b) => b.lat && b.lng && !isNaN(b.lat) && !isNaN(b.lng)
@@ -88,8 +139,8 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
           return;
         }
 
-        // Create custom icon function
-        const createCustomIcon = (business: any) => {
+        // Create custom icon function for businesses
+        const createBusinessIcon = (business: any) => {
           const color = business.isTarget
             ? "#3b82f6" // Blue for target business
             : business.rank > 10
@@ -115,6 +166,7 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
                 font-size: 12px;
                 color: white;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                z-index: ${business.isTarget ? 1000 : 500};
               ">
                 ${business.rank > 20 ? "20+" : business.rank}
               </div>
@@ -128,7 +180,8 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
         // Add markers for each business
         businessesWithCoords.forEach((business) => {
           const marker = L.marker([business.lat, business.lng], {
-            icon: createCustomIcon(business),
+            icon: createBusinessIcon(business),
+            zIndexOffset: business.isTarget ? 1000 : 0,
           }).addTo(mapInstanceRef.current);
 
           // Create popup content
@@ -191,20 +244,26 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
         });
 
         // Fit map to show all markers
-        if (markersRef.current.length > 0) {
-          const group = L.featureGroup(markersRef.current);
-          mapInstanceRef.current.fitBounds(group.getBounds(), {
-            padding: [20, 20],
-          });
+        if (
+          markersRef.current.length > 0 ||
+          gridMarkersRef.current.length > 0
+        ) {
+          const allMarkers = [...markersRef.current, ...gridMarkersRef.current];
+          if (allMarkers.length > 0) {
+            const group = L.featureGroup(allMarkers);
+            mapInstanceRef.current.fitBounds(group.getBounds(), {
+              padding: [20, 20],
+            });
 
-          // Ensure minimum zoom level
-          if (mapInstanceRef.current.getZoom() > 15) {
-            mapInstanceRef.current.setZoom(15);
+            // Ensure minimum zoom level
+            if (mapInstanceRef.current.getZoom() > 15) {
+              mapInstanceRef.current.setZoom(15);
+            }
           }
         }
 
         setIsInitializing(false);
-        console.log("OpenStreetMap initialized successfully");
+        console.log("OpenStreetMap initialized successfully with geo-grid");
       } catch (error) {
         console.error("Map initialization error:", error);
         setMapError(
@@ -212,6 +271,130 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
         );
         setIsInitializing(false);
       }
+    };
+
+    const addGridOverlay = (L: any) => {
+      if (!geoGrid) return;
+
+      // Add grid rings (circles)
+      geoGrid.rings.forEach((ring) => {
+        const circle = L.circle([geoGrid.center.lat, geoGrid.center.lng], {
+          color: "#666666",
+          fillColor: "transparent",
+          fillOpacity: 0,
+          weight: 1,
+          opacity: 0.3,
+          radius: ring.radius,
+          dashArray: "5, 5",
+        }).addTo(mapInstanceRef.current);
+
+        // Add ring label
+        const label = L.divIcon({
+          html: `<div style="
+            background: rgba(255, 255, 255, 0.8);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+            color: #666;
+            white-space: nowrap;
+          ">${GeoGridUtils.formatDistance(ring.radius)}</div>`,
+          className: "ring-label",
+          iconSize: [40, 20],
+        });
+
+        const labelLatLng = L.latLng(
+          geoGrid.center.lat + ring.radius / 111320, // Rough conversion to degrees
+          geoGrid.center.lng
+        );
+
+        L.marker(labelLatLng, { icon: label }).addTo(mapInstanceRef.current);
+
+        gridCirclesRef.current.push(circle);
+      });
+
+      // Add grid points
+      geoGrid.allPoints.forEach((point) => {
+        if (point.ringIndex === 0) return; // Skip center point
+
+        const gridIcon = L.divIcon({
+          html: `
+            <div style="
+              background-color: ${
+                point.ringIndex <= 2
+                  ? "#00FF00"
+                  : point.ringIndex <= 4
+                  ? "#FFFF00"
+                  : "#FF8800"
+              };
+              width: ${point.ringIndex <= 2 ? 8 : 6}px;
+              height: ${point.ringIndex <= 2 ? 8 : 6}px;
+              border-radius: 50%;
+              border: 1px solid white;
+              box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+              opacity: 0.7;
+            "></div>
+          `,
+          className: "grid-point",
+          iconSize: [8, 8],
+          iconAnchor: [4, 4],
+        });
+
+        const marker = L.marker([point.lat, point.lng], {
+          icon: gridIcon,
+          zIndexOffset: -100, // Place below business markers
+        }).addTo(mapInstanceRef.current);
+
+        if (showGridDetails) {
+          // Calculate average rank for this grid point based on nearby businesses
+          const nearbyBusinesses = data.businesses.filter((b) => {
+            if (!b.lat || !b.lng) return false;
+            const distance = GeoGridUtils.calculateDistance(
+              point.lat,
+              point.lng,
+              b.lat,
+              b.lng
+            );
+            return distance < 500; // Within 500m
+          });
+
+          const avgRank =
+            nearbyBusinesses.length > 0
+              ? Math.round(
+                  nearbyBusinesses.reduce((sum, b) => sum + (b.rank || 0), 0) /
+                    nearbyBusinesses.length
+                )
+              : 0;
+
+          const popupContent = `
+            <div style="padding: 8px; min-width: 150px;">
+              <h4 style="margin: 0 0 4px 0; font-weight: bold; font-size: 12px;">
+                Grid Point ${point.ringIndex}-${point.pointIndex + 1}
+              </h4>
+              <div style="font-size: 11px; line-height: 1.4;">
+                <p style="margin: 2px 0;"><strong>Distance:</strong> ${GeoGridUtils.formatDistance(
+                  point.distanceFromCenter
+                )}</p>
+                <p style="margin: 2px 0;"><strong>Direction:</strong> ${point.bearing.toFixed(
+                  0
+                )}°</p>
+                ${
+                  avgRank > 0
+                    ? `<p style="margin: 2px 0;"><strong>Avg Rank:</strong> #${avgRank}</p>`
+                    : ""
+                }
+                <p style="margin: 2px 0;"><strong>Nearby:</strong> ${
+                  nearbyBusinesses.length
+                } businesses</p>
+              </div>
+            </div>
+          `;
+
+          marker.bindPopup(popupContent);
+        }
+
+        gridMarkersRef.current.push(marker);
+      });
     };
 
     initializeMap();
@@ -222,9 +405,11 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
         markersRef.current = [];
+        gridMarkersRef.current = [];
+        gridCirclesRef.current = [];
       }
     };
-  }, [leafletLoaded, data]);
+  }, [leafletLoaded, data, geoGrid, showGrid, showGridDetails]);
 
   const handleZoomIn = () => {
     if (mapInstanceRef.current) {
@@ -240,15 +425,24 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
 
   const handleRecenter = () => {
     if (mapInstanceRef.current && data) {
-      if (markersRef.current.length > 0) {
+      if (markersRef.current.length > 0 || gridMarkersRef.current.length > 0) {
         const L = (window as any).L;
-        const group = L.featureGroup(markersRef.current);
+        const allMarkers = [...markersRef.current, ...gridMarkersRef.current];
+        const group = L.featureGroup(allMarkers);
         mapInstanceRef.current.fitBounds(group.getBounds(), {
           padding: [20, 20],
         });
       } else {
         mapInstanceRef.current.setView([data.center.lat, data.center.lng], 11);
       }
+    }
+  };
+
+  const toggleGrid = () => {
+    setShowGridDetails(!showGridDetails);
+    // Re-render map with new grid settings
+    if (mapInstanceRef.current) {
+      window.location.reload(); // Simple reload for now
     }
   };
 
@@ -414,6 +608,30 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
             />
           </svg>
         </button>
+
+        {showGrid && (
+          <button
+            onClick={toggleGrid}
+            className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors"
+            aria-label="Toggle grid details"
+            title="Toggle grid details"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5 text-gray-800"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
+              />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Legend */}
@@ -436,6 +654,25 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
             <div className="w-4 h-4 bg-red-500 rounded-full"></div>
             <span className="text-gray-700">10+ (Hard)</span>
           </div>
+          {showGrid && (
+            <>
+              <div className="border-t pt-1 mt-1">
+                <div className="font-semibold mb-1">Grid Points</div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-green-400 rounded-full"></div>
+                  <span className="text-gray-700">Inner (0-1km)</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
+                  <span className="text-gray-700">Middle (1-2km)</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-orange-400 rounded-full"></div>
+                  <span className="text-gray-700">Outer (2km+)</span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -446,7 +683,31 @@ const RankingMapComponent: React.FC<RankingMapProps> = ({ data }) => {
             {data.businesses.filter((b) => b.lat && b.lng).length} businesses
             shown
           </p>
+          {showGrid && geoGrid && (
+            <p className="text-xs text-gray-600">
+              {geoGrid.totalPoints} grid points • {geoGrid.rings.length} rings
+            </p>
+          )}
           <p className="text-xs text-gray-600">Click markers for details</p>
+        </div>
+      )}
+
+      {/* Grid Info Panel */}
+      {showGrid && geoGrid && (
+        <div className="absolute top-20 left-4 bg-white rounded-lg shadow-md p-3 max-w-48 z-[1000]">
+          <h4 className="text-xs font-semibold text-gray-900 mb-1">
+            Grid Analysis
+          </h4>
+          <div className="text-xs text-gray-600 space-y-1">
+            <p>
+              Coverage:{" "}
+              {GeoGridUtils.formatDistance(
+                geoGrid.rings[geoGrid.rings.length - 1].radius
+              )}
+            </p>
+            <p>Grid Type: {gridDensity}</p>
+            <p>Total Points: {geoGrid.totalPoints}</p>
+          </div>
         </div>
       )}
     </div>
