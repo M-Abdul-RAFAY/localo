@@ -393,15 +393,30 @@ const GridRankingMapComponent: React.FC<GridRankingMapProps> = ({
           </div>
           <div className="flex items-center space-x-2">
             <div className="w-4 h-4 bg-red-600 rounded-full"></div>
-            <span className="text-gray-700">21+ (Very Poor)</span>
+            <span className="text-gray-700">20+ (Very Poor)</span>
           </div>
         </div>
+      </div>
+
+      {/* Map Attribution */}
+      <div className="absolute bottom-4 left-4 bg-white rounded shadow-sm px-2 py-1 z-[1000]">
+        <p className="text-xs text-gray-500">
+          © Mapbox © OpenStreetMap{" "}
+          <button
+            className="text-blue-600 hover:underline ml-1"
+            onClick={() =>
+              window.open("https://www.mapbox.com/map-feedback/", "_blank")
+            }
+          >
+            Improve this map
+          </button>
+        </p>
       </div>
     </div>
   );
 };
 
-// Wrap with error boundary for map errors
+// Wrap with error boundary
 const GridRankingMap: React.FC<GridRankingMapProps> = (props) => (
   <ErrorBoundary fallback={MapErrorFallback}>
     <GridRankingMapComponent {...props} />

@@ -32,7 +32,79 @@ function checkRateLimit(identifier: string): boolean {
   return true;
 }
 
-async function searchBusinesses(
+async function searchBusinessesWithSerpAPI(
+  keywords: string,
+  location: { lat: number; lng: number },
+  radius: number = 25000
+): Promise<Business[]> {
+  try {
+    const serpApiKey = process.env.SERP_API_KEY;
+
+    if (!serpApiKey) {
+      console.warn("SerpAPI key not configured, using Google Places fallback");
+      return searchBusinessesWithGooglePlaces(keywords, location, radius);
+    }
+
+    console.log(
+      `Searching with SerpAPI: "${keywords}" at ${location.lat},${location.lng}`
+    );
+
+    // Use SerpAPI Google Maps Search
+    const params = new URLSearchParams({
+      api_key: serpApiKey,
+      engine: "google_maps",
+      q: keywords,
+      ll: `@${location.lat},${location.lng},14z`,
+      type: "search",
+      hl: "en",
+      gl: "us",
+    });
+
+    const response = await fetch(`https://serpapi.com/search?${params}`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      console.error(
+        `SerpAPI HTTP error: ${response.status} ${response.statusText}`
+      );
+      throw new Error(`SerpAPI error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log(`SerpAPI response received, processing results...`);
+
+    if (!data.local_results || data.local_results.length === 0) {
+      console.log("No results from SerpAPI, using fallback");
+      return generateMockBusinesses(keywords, location);
+    }
+
+    console.log(`Found ${data.local_results.length} businesses from SerpAPI`);
+
+    // Convert SerpAPI results to our Business interface
+    return data.local_results.map((result: any, index: number) => ({
+      id: result.place_id || `serp_${index}`,
+      name: result.title || "Unknown Business",
+      address: result.address || "",
+      placeId: result.place_id || "",
+      rating: result.rating,
+      reviews: result.reviews,
+      lat: result.gps_coordinates?.latitude,
+      lng: result.gps_coordinates?.longitude,
+      rank: index + 1,
+      isTarget: false,
+    }));
+  } catch (error) {
+    console.error("SerpAPI search error:", error);
+    // Fallback to Google Places or mock data
+    return searchBusinessesWithGooglePlaces(keywords, location, radius);
+  }
+}
+
+async function searchBusinessesWithGooglePlaces(
   keywords: string,
   location: { lat: number; lng: number },
   radius: number = 25000
@@ -389,17 +461,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const apiKey =
         process.env.GOOGLE_PLACES_API_KEY ||
         process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-      if (!apiKey) {
-        console.warn("No API key found, using fallback geocoding");
+      if (!apiKey && !process.env.SERP_API_KEY) {
+        console.warn("No API keys found, using fallback geocoding");
       }
 
       const geocodingService = new GeocodingService(apiKey || "");
       const center = await geocodingService.geocodeLocation(location);
       console.log(`Geocoding result:`, center);
 
-      // Step 2: Search for businesses
+      // Step 2: Search for businesses (try SerpAPI first, then Google Places)
       console.log(`\n2. Searching for businesses with keywords: "${keywords}"`);
-      const searchResults = await searchBusinesses(
+      const searchResults = await searchBusinessesWithSerpAPI(
         keywords,
         center,
         filters?.radius ? filters.radius * 1000 : 25000 // Convert km to meters
@@ -489,7 +561,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             {
               success: false,
               error:
-                "Google Places API is not properly configured. Using mock data for demonstration.",
+                "Search API is not properly configured. Using mock data for demonstration.",
             },
             { status: 503 }
           );

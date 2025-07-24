@@ -13,15 +13,18 @@ import { ErrorBoundary, DataErrorFallback } from "./components/ErrorBoundary";
 import { DataLoadingSkeleton } from "./components/LoadingSkeletons";
 
 // Dynamically import map component to avoid SSR issues
-const GridRankingMap = dynamic(() => import("./components/GridRankingMap"), {
-  ssr: false,
-  loading: () => (
-    <div className="bg-white rounded-lg shadow-sm p-6 h-full">
-      <div className="h-6 w-32 bg-gray-200 animate-pulse rounded mb-4"></div>
-      <div className="w-full h-[600px] bg-gray-200 animate-pulse rounded-lg" />
-    </div>
-  ),
-});
+const GridRankingMap = dynamic(
+  () => import("./components/GridCompetitorsList"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="bg-white rounded-lg shadow-sm p-6 h-full">
+        <div className="h-6 w-32 bg-gray-200 animate-pulse rounded mb-4"></div>
+        <div className="w-full h-[600px] bg-gray-200 animate-pulse rounded-lg" />
+      </div>
+    ),
+  }
+);
 
 // API client for making requests
 class ApiClient {
